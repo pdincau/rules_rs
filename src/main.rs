@@ -1,7 +1,9 @@
-use crate::DriverError::{AboveAllowedAlcoholLevel, UnderRequiredAge, WithoutLicence};
-use crate::Licence::A;
-use chrono::{DateTime, Utc};
+use crate::DriverError::{
+    AboveAllowedAlcoholLevel, LicenceExpired, UnderRequiredAge, WithoutLicence,
+};
+use chrono::{DateTime, Duration, Utc};
 use thiserror::Error;
+use crate::LicenceType::A;
 
 pub trait Rule<T, E> {
     fn run(&self, t: T) -> Result<(), E>;
@@ -13,15 +15,26 @@ struct Driver {
     pub licence: Option<Licence>,
 }
 
-enum Licence {
-    A { expiration: DateTime<Utc> },
-    A1 { expiration: DateTime<Utc> },
-    B { expiration: DateTime<Utc> },
-    C { expiration: DateTime<Utc> },
-    D { expiration: DateTime<Utc> },
-    BE { expiration: DateTime<Utc> },
-    CE { expiration: DateTime<Utc> },
-    DE { expiration: DateTime<Utc> },
+pub struct Licence {
+    pub licence_type: LicenceType,
+    pub expiration: DateTime<Utc>
+}
+
+pub enum LicenceType {
+    A,
+    A1,
+    B,
+    C,
+    D,
+    BE,
+    CE,
+    DE,
+}
+
+impl Licence {
+    pub fn is_valid_in_date(&self, date: DateTime<Utc>) -> bool {
+        self.expiration >= date
+    }
 }
 
 pub struct IsSober {
@@ -58,6 +71,21 @@ impl Rule<Driver, DriverError> for HasDrivingLicence {
     }
 }
 
+pub struct HasValidDrivingLicence {
+    date: DateTime<Utc>,
+}
+
+impl Rule<Driver, DriverError> for HasValidDrivingLicence {
+    fn run(&self, driver: Driver) -> Result<(), DriverError> {
+        driver.licence.map_or(Ok(()), |licence| {
+            if !licence.is_valid_in_date(self.date) {
+                return Err(LicenceExpired(licence.expiration));
+            }
+            Ok(())
+        })
+    }
+}
+
 #[derive(Debug, Error, PartialEq)]
 pub enum DriverError {
     #[error("Alcohol level is: {} grams/lt ", .0)]
@@ -66,6 +94,8 @@ pub enum DriverError {
     UnderRequiredAge(u8),
     #[error("Without licence")]
     WithoutLicence,
+    #[error("Licence expired on date: {}", .0)]
+    LicenceExpired(DateTime<Utc>),
 }
 
 fn main() {}
@@ -75,9 +105,7 @@ pub fn driver_should_not_be_under_minimum_age() {
     let driver = Driver {
         age: 17,
         alcohol_in_blood: 0.4,
-        licence: Some(A {
-            expiration: Utc::now(),
-        }),
+        licence: Some(Licence { licence_type: A, expiration: Utc::now() }),
     };
 
     let rule = HasAge { required_age: 18 };
@@ -95,9 +123,7 @@ pub fn driver_should_be_sober() {
     let driver = Driver {
         age: 18,
         alcohol_in_blood: 0.5,
-        licence: Some(A {
-            expiration: Utc::now(),
-        }),
+        licence: Some(Licence { licence_type: A, expiration: Utc::now() }),
     };
 
     let rule = IsSober {
@@ -116,7 +142,7 @@ pub fn driver_should_be_sober() {
 pub fn driver_should_have_licence() {
     let driver = Driver {
         age: 18,
-        alcohol_in_blood: 0.5,
+        alcohol_in_blood: 0.0,
         licence: None,
     };
 
@@ -127,5 +153,25 @@ pub fn driver_should_have_licence() {
     match result {
         Ok(_) => panic!("should not happen"),
         Err(e) => assert_eq!(WithoutLicence, e),
+    }
+}
+
+#[test]
+pub fn driver_should_have_valid_licence() {
+    let today = Utc::now();
+    let expiration_date = today - Duration::days(1);
+    let driver = Driver {
+        age: 18,
+        alcohol_in_blood: 0.0,
+        licence: Some(Licence { licence_type: A, expiration: expiration_date }),
+    };
+
+    let rule = HasValidDrivingLicence { date: today.clone() };
+
+    let result = rule.run(driver);
+
+    match result {
+        Ok(_) => panic!("should not happen"),
+        Err(e) => assert_eq!(LicenceExpired(expiration_date), e),
     }
 }
