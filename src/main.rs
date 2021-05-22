@@ -1,22 +1,69 @@
 use chrono::{DateTime, Utc};
 use thiserror::Error;
-use crate::DriverError::{WithoutLicence, UnderRequiredAge, LicenceExpired, AboveAllowedAlcoholLevel};
 
-pub trait Rule<T, E> {
-    fn run(&self, t: T) -> Result<(), E>;
+use crate::DriverError::{
+    AboveAllowedAlcoholLevel, LicenceExpired, UnderRequiredAge, WithoutLicence,
+};
+
+pub trait Validator<T, E> {
+    fn validate(&self, t: &T) -> Vec<E>;
 }
 
-struct Driver {
+pub struct DriverValidator {
+    rules: Vec<Box<dyn Rule<Driver, DriverError>>>,
+}
+
+impl DriverValidator {
+    pub fn new(rules: Vec<Box<dyn Rule<Driver, DriverError>>>) -> Self {
+        Self { rules }
+    }
+}
+
+impl Validator<Driver, DriverError> for DriverValidator {
+    fn validate(&self, driver: &Driver) -> Vec<DriverError> {
+        self.rules
+            .iter()
+            .map(|rule| rule.run(driver).unwrap_err())
+            .collect()
+    }
+}
+
+pub struct DriverValidatorBuilder {
+    rules: Vec<Box<dyn Rule<Driver, DriverError>>>,
+}
+
+impl DriverValidatorBuilder {
+    pub fn new() -> Self {
+        Self { rules: Vec::new() }
+    }
+
+    pub fn with_rule(mut self, rule: Box<dyn Rule<Driver, DriverError>>) -> Self {
+        self.rules.push(rule);
+        self
+    }
+
+    pub fn build(self) -> DriverValidator {
+        DriverValidator { rules: self.rules }
+    }
+}
+
+pub trait Rule<T, E> {
+    fn run(&self, t: &T) -> Result<(), E>;
+}
+
+pub struct Driver {
     pub age: u8,
     pub alcohol_in_blood: f32,
     pub licence: Option<Licence>,
 }
 
+#[derive(Copy, Clone)]
 pub struct Licence {
     pub licence_type: LicenceType,
-    pub expiration: DateTime<Utc>
+    pub expiration: DateTime<Utc>,
 }
 
+#[derive(Copy, Clone)]
 pub enum LicenceType {
     A,
     A1,
@@ -39,7 +86,7 @@ pub struct IsSober {
 }
 
 impl Rule<Driver, DriverError> for IsSober {
-    fn run(&self, driver: Driver) -> Result<(), DriverError> {
+    fn run(&self, driver: &Driver) -> Result<(), DriverError> {
         if driver.alcohol_in_blood > self.allowed_level {
             return Err(AboveAllowedAlcoholLevel(driver.alcohol_in_blood));
         }
@@ -52,7 +99,7 @@ pub struct HasAge {
 }
 
 impl Rule<Driver, DriverError> for HasAge {
-    fn run(&self, driver: Driver) -> Result<(), DriverError> {
+    fn run(&self, driver: &Driver) -> Result<(), DriverError> {
         if driver.age < self.required_age {
             return Err(UnderRequiredAge(driver.age));
         }
@@ -63,7 +110,7 @@ impl Rule<Driver, DriverError> for HasAge {
 pub struct HasDrivingLicence;
 
 impl Rule<Driver, DriverError> for HasDrivingLicence {
-    fn run(&self, driver: Driver) -> Result<(), DriverError> {
+    fn run(&self, driver: &Driver) -> Result<(), DriverError> {
         driver.licence.map_or(Err(WithoutLicence), |_| Ok(()))
     }
 }
@@ -73,7 +120,7 @@ pub struct HasValidDrivingLicence {
 }
 
 impl Rule<Driver, DriverError> for HasValidDrivingLicence {
-    fn run(&self, driver: Driver) -> Result<(), DriverError> {
+    fn run(&self, driver: &Driver) -> Result<(), DriverError> {
         driver.licence.map_or(Ok(()), |licence| {
             if !licence.is_valid_in_date(self.date) {
                 return Err(LicenceExpired(licence.expiration));
@@ -99,23 +146,29 @@ fn main() {}
 
 #[cfg(test)]
 mod tests {
+    use chrono::Duration;
+
+    use crate::DriverError::{
+        AboveAllowedAlcoholLevel, LicenceExpired, UnderRequiredAge, WithoutLicence,
+    };
+    use crate::LicenceType::A;
 
     use super::*;
-    use crate::DriverError::{LicenceExpired, WithoutLicence, AboveAllowedAlcoholLevel, UnderRequiredAge};
-    use chrono::Duration;
-    use crate::LicenceType::A;
 
     #[test]
     pub fn driver_should_not_be_under_minimum_age() {
         let driver = Driver {
             age: 17,
             alcohol_in_blood: 0.4,
-            licence: Some(Licence { licence_type: A, expiration: Utc::now() }),
+            licence: Some(Licence {
+                licence_type: A,
+                expiration: Utc::now(),
+            }),
         };
 
         let rule = HasAge { required_age: 18 };
 
-        let result = rule.run(driver);
+        let result = rule.run(&driver);
 
         match result {
             Ok(_) => panic!("should not happen"),
@@ -128,14 +181,17 @@ mod tests {
         let driver = Driver {
             age: 18,
             alcohol_in_blood: 0.5,
-            licence: Some(Licence { licence_type: A, expiration: Utc::now() }),
+            licence: Some(Licence {
+                licence_type: A,
+                expiration: Utc::now(),
+            }),
         };
 
         let rule = IsSober {
             allowed_level: 0.49,
         };
 
-        let result = rule.run(driver);
+        let result = rule.run(&driver);
 
         match result {
             Ok(_) => panic!("should not happen"),
@@ -153,7 +209,7 @@ mod tests {
 
         let rule = HasDrivingLicence;
 
-        let result = rule.run(driver);
+        let result = rule.run(&driver);
 
         match result {
             Ok(_) => panic!("should not happen"),
@@ -168,16 +224,42 @@ mod tests {
         let driver = Driver {
             age: 18,
             alcohol_in_blood: 0.0,
-            licence: Some(Licence { licence_type: A, expiration: expiration_date }),
+            licence: Some(Licence {
+                licence_type: A,
+                expiration: expiration_date,
+            }),
         };
 
-        let rule = HasValidDrivingLicence { date: today.clone() };
+        let rule = HasValidDrivingLicence {
+            date: today.clone(),
+        };
 
-        let result = rule.run(driver);
+        let result = rule.run(&driver);
 
         match result {
             Ok(_) => panic!("should not happen"),
             Err(e) => assert_eq!(LicenceExpired(expiration_date), e),
         }
+    }
+
+    #[test]
+    pub fn validator_runs_multiple_rules() {
+        let driver = Driver {
+            age: 17,
+            alcohol_in_blood: 0.5,
+            licence: None,
+        };
+
+        let validator = DriverValidatorBuilder::new()
+            .with_rule(Box::new(HasDrivingLicence))
+            .with_rule(Box::new(IsSober {
+                allowed_level: 0.49,
+            }))
+            .with_rule(Box::new(HasAge { required_age: 18 }))
+            .build();
+
+        let result = validator.validate(&driver);
+
+        assert_eq!(result.len(), 3)
     }
 }
