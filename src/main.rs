@@ -1,9 +1,6 @@
-use crate::DriverError::{
-    AboveAllowedAlcoholLevel, LicenceExpired, UnderRequiredAge, WithoutLicence,
-};
-use chrono::{DateTime, Duration, Utc};
+use chrono::{DateTime, Utc};
 use thiserror::Error;
-use crate::LicenceType::A;
+use crate::DriverError::{WithoutLicence, UnderRequiredAge, LicenceExpired, AboveAllowedAlcoholLevel};
 
 pub trait Rule<T, E> {
     fn run(&self, t: T) -> Result<(), E>;
@@ -100,78 +97,87 @@ pub enum DriverError {
 
 fn main() {}
 
-#[test]
-pub fn driver_should_not_be_under_minimum_age() {
-    let driver = Driver {
-        age: 17,
-        alcohol_in_blood: 0.4,
-        licence: Some(Licence { licence_type: A, expiration: Utc::now() }),
-    };
+#[cfg(test)]
+mod tests {
 
-    let rule = HasAge { required_age: 18 };
+    use super::*;
+    use crate::DriverError::{LicenceExpired, WithoutLicence, AboveAllowedAlcoholLevel, UnderRequiredAge};
+    use chrono::Duration;
+    use crate::LicenceType::A;
 
-    let result = rule.run(driver);
+    #[test]
+    pub fn driver_should_not_be_under_minimum_age() {
+        let driver = Driver {
+            age: 17,
+            alcohol_in_blood: 0.4,
+            licence: Some(Licence { licence_type: A, expiration: Utc::now() }),
+        };
 
-    match result {
-        Ok(_) => panic!("should not happen"),
-        Err(e) => assert_eq!(UnderRequiredAge(17), e),
+        let rule = HasAge { required_age: 18 };
+
+        let result = rule.run(driver);
+
+        match result {
+            Ok(_) => panic!("should not happen"),
+            Err(e) => assert_eq!(UnderRequiredAge(17), e),
+        }
     }
-}
 
-#[test]
-pub fn driver_should_be_sober() {
-    let driver = Driver {
-        age: 18,
-        alcohol_in_blood: 0.5,
-        licence: Some(Licence { licence_type: A, expiration: Utc::now() }),
-    };
+    #[test]
+    pub fn driver_should_be_sober() {
+        let driver = Driver {
+            age: 18,
+            alcohol_in_blood: 0.5,
+            licence: Some(Licence { licence_type: A, expiration: Utc::now() }),
+        };
 
-    let rule = IsSober {
-        allowed_level: 0.49,
-    };
+        let rule = IsSober {
+            allowed_level: 0.49,
+        };
 
-    let result = rule.run(driver);
+        let result = rule.run(driver);
 
-    match result {
-        Ok(_) => panic!("should not happen"),
-        Err(e) => assert_eq!(AboveAllowedAlcoholLevel(0.5), e),
+        match result {
+            Ok(_) => panic!("should not happen"),
+            Err(e) => assert_eq!(AboveAllowedAlcoholLevel(0.5), e),
+        }
     }
-}
 
-#[test]
-pub fn driver_should_have_licence() {
-    let driver = Driver {
-        age: 18,
-        alcohol_in_blood: 0.0,
-        licence: None,
-    };
+    #[test]
+    pub fn driver_should_have_licence() {
+        let driver = Driver {
+            age: 18,
+            alcohol_in_blood: 0.0,
+            licence: None,
+        };
 
-    let rule = HasDrivingLicence;
+        let rule = HasDrivingLicence;
 
-    let result = rule.run(driver);
+        let result = rule.run(driver);
 
-    match result {
-        Ok(_) => panic!("should not happen"),
-        Err(e) => assert_eq!(WithoutLicence, e),
+        match result {
+            Ok(_) => panic!("should not happen"),
+            Err(e) => assert_eq!(WithoutLicence, e),
+        }
     }
-}
 
-#[test]
-pub fn driver_should_have_valid_licence() {
-    let today = Utc::now();
-    let expiration_date = today - Duration::days(1);
-    let driver = Driver {
-        age: 18,
-        alcohol_in_blood: 0.0,
-        licence: Some(Licence { licence_type: A, expiration: expiration_date }),
-    };
+    #[test]
+    pub fn driver_should_have_valid_licence() {
+        let today = Utc::now();
+        let expiration_date = today - Duration::days(1);
+        let driver = Driver {
+            age: 18,
+            alcohol_in_blood: 0.0,
+            licence: Some(Licence { licence_type: A, expiration: expiration_date }),
+        };
 
-    let rule = HasValidDrivingLicence { date: today.clone() };
+        let rule = HasValidDrivingLicence { date: today.clone() };
 
-    let result = rule.run(driver);
+        let result = rule.run(driver);
 
-    match result {
-        Ok(_) => panic!("should not happen"),
-        Err(e) => assert_eq!(LicenceExpired(expiration_date), e),
+        match result {
+            Ok(_) => panic!("should not happen"),
+            Err(e) => assert_eq!(LicenceExpired(expiration_date), e),
+        }
     }
 }
