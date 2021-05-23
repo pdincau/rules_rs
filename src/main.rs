@@ -21,10 +21,12 @@ impl DriverValidator {
 
 impl Validator<Driver, DriverError> for DriverValidator {
     fn validate(&self, driver: &Driver) -> Vec<DriverError> {
-        self.rules
+        let (_, errors): (Vec<_>, Vec<_>) = self
+            .rules
             .iter()
-            .map(|rule| rule.run(driver).unwrap_err())
-            .collect()
+            .map(|rule| rule.run(driver))
+            .partition(Result::is_ok);
+        errors.into_iter().map(Result::unwrap_err).collect()
     }
 }
 
@@ -231,7 +233,7 @@ mod tests {
         };
 
         let rule = HasValidDrivingLicence {
-            date: today.clone(),
+            date: today,
         };
 
         let result = rule.run(&driver);
@@ -243,10 +245,10 @@ mod tests {
     }
 
     #[test]
-    pub fn validator_runs_multiple_rules() {
+    pub fn validator_runs_multiple_rules_and_returns_errors() {
         let driver = Driver {
             age: 17,
-            alcohol_in_blood: 0.5,
+            alcohol_in_blood: 0.3,
             licence: None,
         };
 
@@ -260,6 +262,6 @@ mod tests {
 
         let result = validator.validate(&driver);
 
-        assert_eq!(result.len(), 3)
+        assert_eq!(result.len(), 2)
     }
 }
