@@ -170,12 +170,7 @@ mod tests {
 
         let rule = HasAge { required_age: 18 };
 
-        let result = rule.run(&driver);
-
-        match result {
-            Ok(_) => panic!("should not happen"),
-            Err(e) => assert_eq!(UnderRequiredAge(17), e),
-        }
+        assert_eq!(UnderRequiredAge(17), rule.run(&driver).unwrap_err())
     }
 
     #[test]
@@ -193,12 +188,7 @@ mod tests {
             allowed_level: 0.49,
         };
 
-        let result = rule.run(&driver);
-
-        match result {
-            Ok(_) => panic!("should not happen"),
-            Err(e) => assert_eq!(AboveAllowedAlcoholLevel(0.5), e),
-        }
+        assert_eq!(AboveAllowedAlcoholLevel(0.5), rule.run(&driver).unwrap_err())
     }
 
     #[test]
@@ -211,12 +201,7 @@ mod tests {
 
         let rule = HasDrivingLicence;
 
-        let result = rule.run(&driver);
-
-        match result {
-            Ok(_) => panic!("should not happen"),
-            Err(e) => assert_eq!(WithoutLicence, e),
-        }
+        assert_eq!(WithoutLicence, rule.run(&driver).unwrap_err())
     }
 
     #[test]
@@ -236,12 +221,7 @@ mod tests {
             date: today,
         };
 
-        let result = rule.run(&driver);
-
-        match result {
-            Ok(_) => panic!("should not happen"),
-            Err(e) => assert_eq!(LicenceExpired(expiration_date), e),
-        }
+        assert_eq!(LicenceExpired(expiration_date), rule.run(&driver).unwrap_err())
     }
 
     #[test]
